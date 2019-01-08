@@ -29,7 +29,6 @@ import { RequestCallback, ExistsCallback, SubscriptionsCallOptions,SubscriptionC
 import { Subscription } from './subscription';
 
 
-
 /**
  * A Topic object allows you to interact with a Cloud Pub/Sub topic.
  *
@@ -488,27 +487,17 @@ export class Topic {
         reqOpts,
         gaxOpts,
       },
-      (err, subscriptions) => {
+      (...args) => {
+        const subscriptions = args[1];
         if (subscriptions) {
-          subscriptions = subscriptions.map((sub:string) => {
+          args[1] = subscriptions.map((sub:string) => {
             // ListTopicSubscriptions only returns sub names
             return self.subscription(sub);
           });
-          callback!(err, subscriptions)
+          
         }
+        callback!(...args);
       }
-      //tslint:disable-next-line only-arrow-functions      
-      // function () {
-      //   const subscriptions = arguments[1];
-      //   if (subscriptions) {
-      //     arguments[1] = subscriptions.map(sub => {
-      //       // ListTopicSubscriptions only returns sub names
-      //       return self.subscription(sub);
-      //     });
-      //   }
-      //   callback!.apply(null, arguments);
-      // }
-
     );
   }
   /**
