@@ -14,16 +14,21 @@
  * limitations under the License.
  */
 
-import {paginator} from '@google-cloud/paginator';
-import {promisifyAll} from '@google-cloud/promisify';
-import {CallOptions} from 'google-gax';
+import { paginator } from '@google-cloud/paginator';
+import { promisifyAll } from '@google-cloud/promisify';
+import { CallOptions } from 'google-gax';
 import * as is from 'is';
-import {Readable} from 'stream';
+import { Readable } from 'stream';
 
-import {CreateTopicCallback, CreateTopicResponse, Metadata, PubSub} from '.';
-import {IAM} from './iam';
-import {Publisher} from './publisher';
+import { CreateTopicCallback, CreateTopicResponse, Metadata, PubSub, CreateSubscriptionOptions, CreateSubscriptionCallback, CreateSubscriptionResponse } from '.';
+import { IAM } from './iam';
+import { Publisher } from './publisher';
 import * as util from './util';
+import { google } from '../proto/pubsub';
+import { RequestCallback, ExistsCallback, SubscriptionsCallOptions,SubscriptionCallOptions,PublisherCallOptions } from '.';
+import { Subscription } from './subscription';
+
+
 
 /**
  * A Topic object allows you to interact with a Cloud Pub/Sub topic.
@@ -47,8 +52,8 @@ export class Topic {
   request: typeof PubSub.prototype.request;
   iam: IAM;
   metadata: Metadata;
-  getSubscriptionsStream = paginator.streamify('getSubscriptions') as() =>
-                               Readable;
+  getSubscriptionsStream = paginator.streamify('getSubscriptions') as () =>
+    Readable;
 
   constructor(pubsub: PubSub, name: string) {
     if (pubsub.Promise) {
@@ -148,12 +153,12 @@ export class Topic {
   create(callback: CreateTopicCallback): void;
   create(gaxOpts: CallOptions, callback: CreateTopicCallback): void;
   create(
-      gaxOptsOrCallback?: CallOptions|CreateTopicCallback,
-      callback?: CreateTopicCallback): Promise<CreateTopicResponse>|void {
+    gaxOptsOrCallback?: CallOptions | CreateTopicCallback,
+    callback?: CreateTopicCallback): Promise<CreateTopicResponse> | void {
     const gaxOpts =
-        typeof gaxOptsOrCallback === 'object' ? gaxOptsOrCallback : {};
+      typeof gaxOptsOrCallback === 'object' ? gaxOptsOrCallback : {};
     callback =
-        typeof gaxOptsOrCallback === 'function' ? gaxOptsOrCallback : callback;
+      typeof gaxOptsOrCallback === 'function' ? gaxOptsOrCallback : callback;
 
     this.pubsub.createTopic(this.name, gaxOpts, callback);
   }
@@ -194,8 +199,17 @@ export class Topic {
    *   const apiResponse = data[1];
    * });
    */
-  createSubscription(name: string, options, callback?) {
-    this.pubsub.createSubscription(this, name, options, callback);
+  createSubscription(name: string, callback: CreateSubscriptionCallback): void;
+  createSubscription(name: string, options: CreateSubscriptionOptions): Promise<CreateSubscriptionResponse>
+  createSubscription(name: string, options?: CreateSubscriptionOptions, callback?: CreateSubscriptionCallback): void;
+  createSubscription(name: string, optionsOrCallback?: CreateSubscriptionOptions | CreateSubscriptionCallback, callback?: CreateSubscriptionCallback): void | Promise<CreateSubscriptionResponse> {
+    const options =
+      typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
+    callback =
+      typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+
+    this.pubsub.createSubscription(this, name, options as CreateSubscriptionOptions, callback!);
+
   }
   /**
    * Delete the topic. This will not delete subscriptions to this topic.
@@ -224,9 +238,10 @@ export class Topic {
    *   const apiResponse = data[0];
    * });
    */
-  delete(gaxOpts?, callback?) {
+  delete(callback?: RequestCallback<google.protobuf.Empty>): void
+  delete(gaxOpts?: CallOptions | RequestCallback<google.protobuf.Empty>, callback?: RequestCallback<google.protobuf.Empty>): void {
     if (is.fn(gaxOpts)) {
-      callback = gaxOpts;
+      callback = gaxOpts as RequestCallback<google.protobuf.Empty>;
       gaxOpts = {};
     }
     callback = callback || util.noop;
@@ -234,13 +249,13 @@ export class Topic {
       topic: this.name,
     };
     this.request(
-        {
-          client: 'PublisherClient',
-          method: 'deleteTopic',
-          reqOpts,
-          gaxOpts,
-        },
-        callback);
+      {
+        client: 'PublisherClient',
+        method: 'deleteTopic',
+        reqOpts,
+        gaxOpts: gaxOpts as CallOptions,
+      },
+      callback);
   }
   /**
    * @typedef {array} TopicExistsResponse
@@ -272,13 +287,17 @@ export class Topic {
    *   const exists = data[0];
    * });
    */
-  exists(callback) {
-    this.getMetadata(err => {
+  exists(callback: ExistsCallback) {
+    this.getMetadata((err) => {
       if (!err) {
         callback(null, true);
         return;
       }
-      if (err.code === 5) {
+      let code: number = 0;
+      if (err.hasOwnProperty('code')) {
+        code = (Object.getOwnPropertyDescriptor(err, 'code') as PropertyDescriptor).value;
+      }
+      if (code === 5) {
         callback(null, false);
         return;
       }
@@ -324,20 +343,24 @@ export class Topic {
    *   const apiResponse = data[1];
    * });
    */
-  get(gaxOpts, callback) {
+  get(gaxOpts: CallOptions & { autoCreate?: boolean }, callback: CreateTopicCallback) {
     if (is.fn(gaxOpts)) {
-      callback = gaxOpts;
+      callback = gaxOpts as CreateTopicCallback;
       gaxOpts = {};
     }
     const autoCreate = !!gaxOpts.autoCreate;
     delete gaxOpts.autoCreate;
     this.getMetadata(gaxOpts, (err, apiResponse) => {
       if (!err) {
-        callback(null, this, apiResponse);
+        callback(null, this, apiResponse!);
         return;
       }
-      if (err.code !== 5 || !autoCreate) {
-        callback(err, null, apiResponse);
+      let code: number = 0;
+      if (err.hasOwnProperty('code')) {
+        code = (Object.getOwnPropertyDescriptor(err, 'code') as PropertyDescriptor).value;
+      }
+      if (code !== 5 || !autoCreate) {
+        callback(err, null, apiResponse!);
         return;
       }
       this.create(gaxOpts, callback);
@@ -377,27 +400,29 @@ export class Topic {
    *   const apiResponse = data[0];
    * });
    */
-  getMetadata(gaxOpts, callback?) {
+  getMetadata(callback: RequestCallback<Topic>): void;
+  getMetadata(gaxOpts: CallOptions, callback: RequestCallback<Topic>): void;
+  getMetadata(gaxOpts: CallOptions | RequestCallback<Topic>, callback?: RequestCallback<Topic>): void {
     if (is.fn(gaxOpts)) {
-      callback = gaxOpts;
+      callback = gaxOpts as RequestCallback<Topic>;
       gaxOpts = {};
     }
     const reqOpts = {
       topic: this.name,
     };
     this.request(
-        {
-          client: 'PublisherClient',
-          method: 'getTopic',
-          reqOpts,
-          gaxOpts,
-        },
-        (err, apiResponse) => {
-          if (!err) {
-            this.metadata = apiResponse;
-          }
-          callback(err, apiResponse);
-        });
+      {
+        client: 'PublisherClient',
+        method: 'getTopic',
+        reqOpts,
+        gaxOpts: gaxOpts as CallOptions,
+      },
+      (err, apiResponse) => {
+        if (!err) {
+          this.metadata = apiResponse;
+        }
+        callback!(err, apiResponse);
+      });
   }
   /**
    * Get a list of the subscriptions registered to this topic. You may
@@ -435,42 +460,56 @@ export class Topic {
    *   const subscriptions = data[0];
    * });
    */
-  getSubscriptions(options, callback?) {
+  getSubscriptions(callback?: RequestCallback<Subscription[]>): void;
+  getSubscriptions(options: SubscriptionsCallOptions, callback?: RequestCallback<Subscription[]>): void;
+  getSubscriptions(optionsOrCallback?: SubscriptionsCallOptions | RequestCallback<Subscription[]>, callback?: RequestCallback<Subscription[]>): void {
     const self = this;
-    if (is.fn(options)) {
-      callback = options;
-      options = {};
-    }
+    const options =
+      typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
+    callback =
+      typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+
     const reqOpts = Object.assign(
-        {
-          topic: this.name,
-        },
-        options);
+      {
+        topic: this.name,
+      },
+      options as SubscriptionsCallOptions);
     delete reqOpts.gaxOpts;
     delete reqOpts.autoPaginate;
     const gaxOpts = Object.assign(
-        {
-          autoPaginate: options.autoPaginate,
-        },
-        options.gaxOpts);
+      {
+        autoPaginate: options.autoPaginate,
+      },
+      options.gaxOpts);
     this.request(
-        {
-          client: 'PublisherClient',
-          method: 'listTopicSubscriptions',
-          reqOpts,
-          gaxOpts,
-        },
-        // tslint:disable-next-line only-arrow-functions
-        function() {
-          const subscriptions = arguments[1];
-          if (subscriptions) {
-            arguments[1] = subscriptions.map(sub => {
-              // ListTopicSubscriptions only returns sub names
-              return self.subscription(sub);
-            });
-          }
-          callback.apply(null, arguments);
-        });
+      {
+        client: 'PublisherClient',
+        method: 'listTopicSubscriptions',
+        reqOpts,
+        gaxOpts,
+      },
+      (err, subscriptions) => {
+        if (subscriptions) {
+          subscriptions = subscriptions.map((sub:string) => {
+            // ListTopicSubscriptions only returns sub names
+            return self.subscription(sub);
+          });
+          callback!(err, subscriptions)
+        }
+      }
+      //tslint:disable-next-line only-arrow-functions      
+      // function () {
+      //   const subscriptions = arguments[1];
+      //   if (subscriptions) {
+      //     arguments[1] = subscriptions.map(sub => {
+      //       // ListTopicSubscriptions only returns sub names
+      //       return self.subscription(sub);
+      //     });
+      //   }
+      //   callback!.apply(null, arguments);
+      // }
+
+    );
   }
   /**
    * Creates a Publisher object that allows you to publish messages to this
@@ -500,7 +539,7 @@ export class Topic {
    *   }
    * });
    */
-  publisher(options?) {
+  publisher(options?:PublisherCallOptions) {
     return new Publisher(this, options);
   }
   /**
@@ -542,7 +581,9 @@ export class Topic {
    *   // message.publishTime = Timestamp when Pub/Sub received the message.
    * });
    */
-  subscription(name, options?) {
+  subscription(name:string):Subscription 
+  subscription(name:string, options?:SubscriptionCallOptions):Subscription 
+  subscription(name:string, options?:SubscriptionCallOptions):Subscription {
     options = options || {};
     options.topic = this;
     return this.pubsub.subscription(name, options);
