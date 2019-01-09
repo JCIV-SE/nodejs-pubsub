@@ -29,6 +29,9 @@ import { RequestCallback, ExistsCallback, SubscriptionsCallOptions,SubscriptionC
 import { Subscription } from './subscription';
 
 
+type GetCallOptions = { autoCreate?: boolean };
+
+
 /**
  * A Topic object allows you to interact with a Cloud Pub/Sub topic.
  *
@@ -199,8 +202,8 @@ export class Topic {
    * });
    */
   createSubscription(name: string, callback: CreateSubscriptionCallback): void;
-  createSubscription(name: string, options: CreateSubscriptionOptions): Promise<CreateSubscriptionResponse>
-  createSubscription(name: string, options?: CreateSubscriptionOptions, callback?: CreateSubscriptionCallback): void;
+  createSubscription(name: string, options?: CreateSubscriptionOptions): Promise<CreateSubscriptionResponse>
+  createSubscription(name: string, options: CreateSubscriptionOptions, callback: CreateSubscriptionCallback): void;
   createSubscription(name: string, optionsOrCallback?: CreateSubscriptionOptions | CreateSubscriptionCallback, callback?: CreateSubscriptionCallback): void | Promise<CreateSubscriptionResponse> {
     const options =
       typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
@@ -342,7 +345,7 @@ export class Topic {
    *   const apiResponse = data[1];
    * });
    */
-  get(gaxOpts: CallOptions & { autoCreate?: boolean }, callback: CreateTopicCallback) {
+  get(gaxOpts: CallOptions & GetCallOptions, callback: CreateTopicCallback) {
     if (is.fn(gaxOpts)) {
       callback = gaxOpts as CreateTopicCallback;
       gaxOpts = {};
