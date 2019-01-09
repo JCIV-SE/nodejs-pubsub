@@ -332,31 +332,25 @@ describe('pubsub', () => {
     it('should create a subscription with message retention', done => {
       const subName = generateSubName();
       const threeDaysInSeconds = 3 * 24 * 60 * 60;
-      const callOptions = {
-        seconds:threeDaysInSeconds,
-        nanos:0,
-        topic:'',
-        name:''
-      }
+      const callOptions =
+          {seconds: threeDaysInSeconds, nanos: 0, topic: '', name: ''};
 
-      topic.createSubscription(
-          subName, callOptions,
-          (err, sub) => {
-            assert.ifError(err);
+      topic.createSubscription(subName, callOptions, (err, sub) => {
+        assert.ifError(err);
 
-            sub!.getMetadata((err, metadata) => {
-              assert.ifError(err);
+        sub!.getMetadata((err, metadata) => {
+          assert.ifError(err);
 
-              assert.strictEqual(metadata.retainAckedMessages, true);
-              assert.strictEqual(
-                  Number(metadata.messageRetentionDuration.seconds),
-                  threeDaysInSeconds);
-              assert.strictEqual(
-                  Number(metadata.messageRetentionDuration.nanos), 0);
+          assert.strictEqual(metadata.retainAckedMessages, true);
+          assert.strictEqual(
+              Number(metadata.messageRetentionDuration.seconds),
+              threeDaysInSeconds);
+          assert.strictEqual(
+              Number(metadata.messageRetentionDuration.nanos), 0);
 
-              sub!.delete(done);
-            });
-          });
+          sub!.delete(done);
+        });
+      });
     });
 
     it('should set metadata for a subscription', () => {
