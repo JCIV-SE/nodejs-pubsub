@@ -20,10 +20,20 @@ import {CallOptions} from 'google-gax';
 import * as is from 'is';
 import {Readable} from 'stream';
 
-import {CreateTopicCallback, CreateTopicResponse, Metadata, PubSub} from '.';
+import {google} from '../proto/pubsub';
+
+import {CreateSubscriptionCallback, CreateSubscriptionOptions, CreateSubscriptionResponse, CreateTopicCallback, CreateTopicResponse, Metadata, PubSub} from '.';
+import {ExistsCallback, PublisherCallOptions, RequestCallback, SubscriptionCallOptions} from '.';
 import {IAM} from './iam';
 import {Publisher} from './publisher';
+import {Subscription} from './subscription';
 import * as util from './util';
+
+
+type GetCallOptions = {
+  autoCreate?: boolean
+};
+
 
 /**
  * A Topic object allows you to interact with a Cloud Pub/Sub topic.
@@ -194,8 +204,24 @@ export class Topic {
    *   const apiResponse = data[1];
    * });
    */
-  createSubscription(name: string, options, callback?) {
-    this.pubsub.createSubscription(this, name, options, callback);
+  createSubscription(name: string, callback: CreateSubscriptionCallback): void;
+  createSubscription(name: string, options?: CreateSubscriptionOptions):
+      Promise<CreateSubscriptionResponse>;
+  createSubscription(
+      name: string, options: CreateSubscriptionOptions,
+      callback: CreateSubscriptionCallback): void;
+  createSubscription(
+      name: string,
+      optionsOrCallback?: CreateSubscriptionOptions|CreateSubscriptionCallback,
+      callback?: CreateSubscriptionCallback):
+      void|Promise<CreateSubscriptionResponse> {
+    const options =
+        typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
+    callback =
+        typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+
+    this.pubsub.createSubscription(
+        this, name, options as CreateSubscriptionOptions, callback!);
   }
   /**
    * Delete the topic. This will not delete subscriptions to this topic.
@@ -224,9 +250,12 @@ export class Topic {
    *   const apiResponse = data[0];
    * });
    */
-  delete(gaxOpts?, callback?) {
+  delete(callback?: RequestCallback<google.protobuf.Empty>): void;
+  delete(
+      gaxOpts?: CallOptions|RequestCallback<google.protobuf.Empty>,
+      callback?: RequestCallback<google.protobuf.Empty>): void {
     if (is.fn(gaxOpts)) {
-      callback = gaxOpts;
+      callback = gaxOpts as RequestCallback<google.protobuf.Empty>;
       gaxOpts = {};
     }
     callback = callback || util.noop;
@@ -238,7 +267,7 @@ export class Topic {
           client: 'PublisherClient',
           method: 'deleteTopic',
           reqOpts,
-          gaxOpts,
+          gaxOpts: gaxOpts as CallOptions,
         },
         callback);
   }
@@ -272,13 +301,19 @@ export class Topic {
    *   const exists = data[0];
    * });
    */
-  exists(callback) {
-    this.getMetadata(err => {
+  exists(callback: ExistsCallback) {
+    this.getMetadata((err) => {
       if (!err) {
         callback(null, true);
         return;
       }
-      if (err.code === 5) {
+      let code = 0;
+      if (err.hasOwnProperty('code')) {
+        code =
+            (Object.getOwnPropertyDescriptor(err, 'code') as PropertyDescriptor)
+                .value;
+      }
+      if (code === 5) {
         callback(null, false);
         return;
       }
@@ -324,20 +359,26 @@ export class Topic {
    *   const apiResponse = data[1];
    * });
    */
-  get(gaxOpts, callback) {
+  get(gaxOpts: CallOptions&GetCallOptions, callback: CreateTopicCallback) {
     if (is.fn(gaxOpts)) {
-      callback = gaxOpts;
+      callback = gaxOpts as CreateTopicCallback;
       gaxOpts = {};
     }
     const autoCreate = !!gaxOpts.autoCreate;
     delete gaxOpts.autoCreate;
     this.getMetadata(gaxOpts, (err, apiResponse) => {
       if (!err) {
-        callback(null, this, apiResponse);
+        callback(null, this, apiResponse!);
         return;
       }
-      if (err.code !== 5 || !autoCreate) {
-        callback(err, null, apiResponse);
+      let code = 0;
+      if (err.hasOwnProperty('code')) {
+        code =
+            (Object.getOwnPropertyDescriptor(err, 'code') as PropertyDescriptor)
+                .value;
+      }
+      if (code !== 5 || !autoCreate) {
+        callback(err, null, apiResponse!);
         return;
       }
       this.create(gaxOpts, callback);
@@ -377,9 +418,13 @@ export class Topic {
    *   const apiResponse = data[0];
    * });
    */
-  getMetadata(gaxOpts, callback?) {
+  getMetadata(callback: RequestCallback<Topic>): void;
+  getMetadata(gaxOpts: CallOptions, callback: RequestCallback<Topic>): void;
+  getMetadata(
+      gaxOpts: CallOptions|RequestCallback<Topic>,
+      callback?: RequestCallback<Topic>): void {
     if (is.fn(gaxOpts)) {
-      callback = gaxOpts;
+      callback = gaxOpts as RequestCallback<Topic>;
       gaxOpts = {};
     }
     const reqOpts = {
@@ -390,13 +435,13 @@ export class Topic {
           client: 'PublisherClient',
           method: 'getTopic',
           reqOpts,
-          gaxOpts,
+          gaxOpts: gaxOpts as CallOptions,
         },
         (err, apiResponse) => {
           if (!err) {
             this.metadata = apiResponse;
           }
-          callback(err, apiResponse);
+          callback!(err, apiResponse);
         });
   }
   /**
@@ -435,17 +480,25 @@ export class Topic {
    *   const subscriptions = data[0];
    * });
    */
-  getSubscriptions(options, callback?) {
+  getSubscriptions(callback?: RequestCallback<Subscription[]>): void;
+  getSubscriptions(
+      options: SubscriptionCallOptions,
+      callback?: RequestCallback<Subscription[]>): void;
+  getSubscriptions(
+      optionsOrCallback?: SubscriptionCallOptions|
+      RequestCallback<Subscription[]>,
+      callback?: RequestCallback<Subscription[]>): void {
     const self = this;
-    if (is.fn(options)) {
-      callback = options;
-      options = {};
-    }
+    const options =
+        typeof optionsOrCallback === 'object' ? optionsOrCallback : {};
+    callback =
+        typeof optionsOrCallback === 'function' ? optionsOrCallback : callback;
+
     const reqOpts = Object.assign(
         {
           topic: this.name,
         },
-        options);
+        options as SubscriptionCallOptions);
     delete reqOpts.gaxOpts;
     delete reqOpts.autoPaginate;
     const gaxOpts = Object.assign(
@@ -460,16 +513,15 @@ export class Topic {
           reqOpts,
           gaxOpts,
         },
-        // tslint:disable-next-line only-arrow-functions
-        function() {
-          const subscriptions = arguments[1];
+        (...args) => {
+          const subscriptions = args[1];
           if (subscriptions) {
-            arguments[1] = subscriptions.map(sub => {
+            args[1] = subscriptions.map((sub: string) => {
               // ListTopicSubscriptions only returns sub names
               return self.subscription(sub);
             });
           }
-          callback.apply(null, arguments);
+          callback!(...args);
         });
   }
   /**
@@ -500,7 +552,7 @@ export class Topic {
    *   }
    * });
    */
-  publisher(options?) {
+  publisher(options?: PublisherCallOptions) {
     return new Publisher(this, options);
   }
   /**
@@ -542,7 +594,9 @@ export class Topic {
    *   // message.publishTime = Timestamp when Pub/Sub received the message.
    * });
    */
-  subscription(name, options?) {
+  subscription(name: string): Subscription;
+  subscription(name: string, options?: SubscriptionCallOptions): Subscription;
+  subscription(name: string, options?: SubscriptionCallOptions): Subscription {
     options = options || {};
     options.topic = this;
     return this.pubsub.subscription(name, options);

@@ -34,6 +34,30 @@ import {Readable} from 'stream';
 const opts = {} as gax.GrpcClientOptions;
 const {grpc} = new gax.GrpcClient(opts);
 
+
+export interface ExistsCallback {
+  (err?: Error|null, res?: boolean|null): void;
+}
+
+
+
+export interface SubscriptionCallOptions {
+  flowControl?: {maxBytes?: number, maxMessages?: number};
+  maxConnections?: number;
+  topic?: Topic;
+  ackDeadline?: number;
+  autoPaginate?: boolean;
+  gaxOpts?: CallOptions;
+  batching?: {
+
+  };
+}
+
+export interface PublisherCallOptions {
+  batching?:
+      {maxBytes?: number, maxMessages?: number, maxMilliseconds?: number};
+}
+
 /**
  * @type {string} - Project ID placeholder.
  * @private
